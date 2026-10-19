@@ -74,6 +74,7 @@ Local files only.
 - **jq:** parses every JSON reply and cleans every string herdr returns.
 - **git:** read from `.git` files. The git binary is never run.
 - **Claude Code:** transcripts in `~/.claude/projects`, read only when needed. `AGENT_TRANSCRIPT=0` turns this off.
+- **Cursor:** chat names from `~/.cursor/chats/*/<id>/store.db` via `sqlite3`, keyed by the session herdr's cursor integration reports. Read only when needed; `AGENT_TRANSCRIPT=0` turns this off too.
 
 ## 6. Deployment and infrastructure
 

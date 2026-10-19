@@ -125,7 +125,7 @@ description = "hand this tab's name back to automatic naming"
 ## Caveats
 
 - Prefix numbering stops at 9 since herdr only allows keybindings up until that number.
-- An untitled Claude Code tab gets its name from the session transcript on disk. Set `AGENT_TRANSCRIPT=0` in `config.sh` to stop that.
+- An untitled Claude Code tab gets its name from the session transcript on disk, and a Cursor tab from the chat name Cursor generated (needs `herdr integration install cursor` and `sqlite3`). Set `AGENT_TRANSCRIPT=0` in `config.sh` to stop that.
 - Some Linux containers and sandboxes hide the foreground process from herdr, so naming stops (numbering still works). On herdr `>= 0.8.0`, set `HERDR_PROCESS_DETECTION=child-groups` in herdr's environment.
 - Below herdr `0.7.4`, a new name only shows at the next redraw, such as a focus change.
 

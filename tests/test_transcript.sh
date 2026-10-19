@@ -153,5 +153,37 @@ JSON
 check "another agent's pane is not read" "-" "$(topic_of "$ID" "$DIR" codex)"
 check "and the kind is compared exactly" "-" "$(topic_of "$ID" "$DIR" Claude)"
 
+# ---- Cursor: the name it generated for the chat ----
+# herdr's cursor integration reports the chat id as the pane's session, and
+# Cursor keeps the chat's name as hex-encoded JSON in that chat's store.db, filed
+# under a hash of the workspace root this test has no need to reproduce.
+export CURSOR_CONFIG_DIR="$SB/cursor"
+CID=0ed54c4a-e4ce-4a06-b252-91cc700e3b21
+cursor_chat() {
+  local d="$CURSOR_CONFIG_DIR/chats/0123456789abcdef0123456789abcdef/$1"
+  mkdir -p "$d"
+  rm -f "$d/store.db"
+  sqlite3 "$d/store.db" "CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT);
+    INSERT INTO meta VALUES ('0', hex('$2'));"
+}
+if command -v sqlite3 >/dev/null 2>&1; then
+  cursor_chat "$CID" '{"agentId":"x","name":"Evaluate Smart Placement","mode":"default"}'
+  check "a cursor chat is named by its generated name" "Evaluate Smart Placement" \
+    "$(topic_of "$CID" "$DIR" cursor)"
+  check "found whatever workspace it is filed under" "Evaluate Smart Placement" \
+    "$(topic_of "$CID" /somewhere/else cursor)"
+  cursor_chat "$CID" '{"agentId":"x","name":"New Agent"}'
+  check "an unprompted chat says nothing" "-" "$(topic_of "$CID" "$DIR" cursor)"
+  cursor_chat "$CID" 'not json'
+  check "a meta row that is not json says nothing" "-" "$(topic_of "$CID" "$DIR" cursor)"
+  check "an unknown chat is not there" "-" \
+    "$(topic_of 00000000-0000-0000-0000-000000000000 "$DIR" cursor)"
+  check "a cursor id that is not a uuid is refused" "-" "$(topic_of "../$CID" "$DIR" cursor)"
+  cursor_chat "$CID" '{"name":"Belongs to cursor"}'
+  check "a claude pane does not read a cursor chat" "-" "$(topic_of "$CID" "$DIR")"
+  check "AGENT_TRANSCRIPT=0 reads no cursor chat" "-" \
+    "$(AGENT_TRANSCRIPT=0 topic_of "$CID" "$DIR" cursor)"
+fi
+
 rm -rf "$SB"
 t_summary

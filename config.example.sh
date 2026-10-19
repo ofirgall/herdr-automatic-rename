@@ -135,8 +135,9 @@
 # 1 names an untitled Claude Code tab from its session transcript on disk: the
 # title Claude Code generated, or else your first prompt. This covers sessions
 # started with a slash command, which Claude Code never titles. It needs `herdr
-# integration install claude`. Only Claude Code is read. Set 0 if you do not
-# want the plugin to read transcripts.
+# integration install claude`. A Cursor tab is named from the chat name Cursor
+# generated, which needs `herdr integration install cursor` and sqlite3. Set 0
+# if you do not want the plugin to read transcripts or chats.
 # AGENT_TRANSCRIPT=1
 
 # Longest title shown, in characters, cut at a word boundary when possible.

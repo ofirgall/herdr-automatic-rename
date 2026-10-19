@@ -14,20 +14,21 @@
 # command and answered by the agent alone is never given one, and its tab reads
 # "claude" however long it runs.
 #
-# Only Claude Code is read, and the pane's agent is checked rather than assumed:
-# every agent keeps its transcript in its own shape and its own place, so another
-# agent's pane carrying a session value -- its own, or one a claude left behind
-# there -- would otherwise put one agent's prompts on another agent's tab. The
-# shape is undocumented besides, so a transcript that stops carrying these fields
-# yields nothing and the tab is named as it was before this existed, which is the
-# failure mode to have.
+# Claude Code and Cursor are read, and the pane's agent is checked rather than
+# assumed: every agent keeps its sessions in its own shape and its own place, so
+# another agent's pane carrying a session value -- its own, or one a claude left
+# behind there -- would otherwise put one agent's prompts on another agent's tab.
+# The shapes are undocumented besides, so a session that stops carrying these
+# fields yields nothing and the tab is named as it was before this existed, which
+# is the failure mode to have.
 #
 # Checked on its own by shellcheck, where the AR_TRANSCRIPT_* globals it answers
 # through have no reader in sight: the engine next door is what reads them.
 # shellcheck disable=SC2034
 
-# The agent whose transcripts this knows how to read, as herdr names it.
+# The agents whose sessions this knows how to read, as herdr names them.
 AR_TRANSCRIPT_AGENT=claude
+AR_CURSOR_AGENT=cursor
 
 # Where Claude Code keeps its sessions. The environment variable is what a user
 # who moved it sets, and it is read at call time rather than cached because the
@@ -131,6 +132,10 @@ ar_transcript_topic() {
   AR_TRANSCRIPT_TOPIC=""
   AR_TRANSCRIPT_TOPIC_LC=""
   [ "${AGENT_TRANSCRIPT:-1}" = "1" ] || return 1
+  if [ "$1" = "$AR_CURSOR_AGENT" ]; then
+    ar_cursor_topic "$2"
+    return
+  fi
   [ "$1" = "$AR_TRANSCRIPT_AGENT" ] || return 1
   ar_transcript_file "$2" "$3" || return 1
   # `last(inputs)` and `first(inputs)` rather than a trailing `tail -n1`/`head
@@ -150,6 +155,50 @@ ar_transcript_topic() {
           | content | opening | task("") | select(length > 0))
         // empty | [ ., ascii_downcase ] | join([31] | implode)' 2>/dev/null)
   fi
+  [ -n "$row" ] || return 1
+  IFS=$AR_ROW_SEP read -r AR_TRANSCRIPT_TOPIC AR_TRANSCRIPT_TOPIC_LC <<< "$row"
+  [ -n "$AR_TRANSCRIPT_TOPIC" ]
+}
+
+# Where Cursor keeps its chats, one directory per chat id under a directory per
+# workspace. CURSOR_CONFIG_DIR is the same override herdr's cursor integration
+# honours.
+ar_cursor_chats_root() {
+  printf '%s' "${CURSOR_CONFIG_DIR:-$HOME/.cursor}/chats"
+}
+
+# The name Cursor gives a chat before its first prompt. It says nothing about the
+# work, so it is refused like a title that names the agent.
+_AR_CURSOR_UNNAMED='New Agent'
+
+# ar_cursor_topic <session id> -> sets AR_TRANSCRIPT_TOPIC(_LC) to the name
+# Cursor generated for that chat; rc 1 when there is none.
+#
+# herdr's cursor integration reports the chat id as the pane's session. Cursor
+# files the chat under md5(workspace root), and the root is not always the pane's
+# directory, so the chat is found by its id across every workspace: there is one
+# match, and a glob costs less than hashing a guess. The name lives in the chat's
+# store.db as hex-encoded JSON in the meta table. The read is read-only but not
+# immutable: the running agent writes through a WAL, and the name it just
+# generated may still be there.
+ar_cursor_topic() {
+  local match db="" row=""
+  [[ $1 =~ $_AR_SESSION_ID ]] || return 1
+  command -v sqlite3 >/dev/null 2>&1 || return 1
+  for match in "$(ar_cursor_chats_root)"/*/"$1"/store.db; do
+    if [ -f "$match" ]; then
+      db=$match
+      break
+    fi
+  done
+  [ -n "$db" ] || return 1
+  row=$(sqlite3 -readonly "$db" \
+      "SELECT CAST(unhex(value) AS TEXT) FROM meta LIMIT 1" 2>/dev/null \
+    | jq -Rrn --arg unnamed "$_AR_CURSOR_UNNAMED" "$AR_JQ_CLEAN$AR_JQ_TASK"'
+      first(inputs | fromjson? // empty | .name | strings
+        | select(length > 0 and . != $unnamed))
+      // empty | task("") | select(length > 0)
+      | [ ., ascii_downcase ] | join([31] | implode)' 2>/dev/null)
   [ -n "$row" ] || return 1
   IFS=$AR_ROW_SEP read -r AR_TRANSCRIPT_TOPIC AR_TRANSCRIPT_TOPIC_LC <<< "$row"
   [ -n "$AR_TRANSCRIPT_TOPIC" ]
