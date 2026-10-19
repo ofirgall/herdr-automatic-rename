@@ -60,6 +60,15 @@ check "a dot segment cannot alias the store" \
 check "nor a dot-dot segment" \
   "$LEGACY" "$(state_dir_for "$CFG/sessions/../herdr.sock")"
 
+# ---- a debug build's server beside the installed one ----
+DEV="$SB/config/herdr-dev"
+check "a debug build's default session gets its own store" \
+  "$LEGACY/servers/herdr-dev" "$(state_dir_for "$DEV/herdr.sock")"
+check "and its named sessions sit under it" \
+  "$LEGACY/servers/herdr-dev/sessions/work" "$(state_dir_for "$DEV/sessions/work/herdr.sock")"
+check "a bare herdr- directory is not a debug build" \
+  "$LEGACY" "$(state_dir_for "$SB/config/herdr-/herdr.sock")"
+
 # ---- resolution off the session name ----
 check "a session name alone names the store" \
   "$LEGACY/sessions/work" "$(state_dir_for "" work)"

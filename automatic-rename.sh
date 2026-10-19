@@ -76,12 +76,15 @@ AR_LEGACY_STATE_FILE="$STATE_DIR/state.json"
 # The default session, which herdr also calls `default`, keeps the store here.
 _ar_sock_dir="${HERDR_SOCKET_PATH:+${HERDR_SOCKET_PATH%/*}}"
 _ar_sock_parent="${_ar_sock_dir%/*}"
+_ar_root=""
 if [ -z "$_ar_sock_dir" ]; then
   _ar_session="${HERDR_SESSION:-}"
 elif [ "$_ar_sock_parent" != "$_ar_sock_dir" ] && [ "${_ar_sock_parent##*/}" = "sessions" ]; then
   _ar_session="${_ar_sock_dir##*/}"
+  _ar_root="${_ar_sock_parent%/*}"
 else
   _ar_session=""
+  _ar_root="$_ar_sock_dir"
 fi
 # A name is one path segment, never a dot entry: herdr refuses those as session
 # names, and a hand-set socket path must not alias the store onto another dir.
@@ -91,11 +94,17 @@ fi
 # than interpolated. Nothing is protected from its own owner by that -- anyone
 # who can set the variable can set XDG_STATE_HOME too -- it is that a name which
 # is not one segment names no session, and the two routes should agree.
+# A debug herdr build keeps its config and sockets in a sibling directory such
+# as `herdr-dev` and runs its own server beside the installed one. That server
+# numbers its tabs from w1:t1 too, so it gets its own stores under `servers/`.
+case "${_ar_root##*/}" in
+  herdr-?*) STATE_DIR="$STATE_DIR/servers/${_ar_root##*/}" ;;
+esac
 case "$_ar_session" in
   "" | default | . | .. | */*) ;;
   *) STATE_DIR="$STATE_DIR/sessions/$_ar_session" ;;
 esac
-unset _ar_sock_dir _ar_sock_parent _ar_session
+unset _ar_sock_dir _ar_sock_parent _ar_session _ar_root
 STATE_FILE="$STATE_DIR/state.json"
 LOCK_DIR="$STATE_DIR/lock"
 RERUN_FLAG="$STATE_DIR/rerun"
