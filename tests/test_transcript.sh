@@ -162,9 +162,13 @@ CID=0ed54c4a-e4ce-4a06-b252-91cc700e3b21
 cursor_chat() {
   local d="$CURSOR_CONFIG_DIR/chats/0123456789abcdef0123456789abcdef/$1"
   mkdir -p "$d"
-  rm -f "$d/store.db"
+  rm -f "$d/store.db" "$d/meta.json"
   sqlite3 "$d/store.db" "CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT);
     INSERT INTO meta VALUES ('0', hex('$2'));"
+}
+# cursor_meta <chat id> <json> -> the meta.json recent Cursor writes beside store.db.
+cursor_meta() {
+  printf '%s\n' "$2" > "$CURSOR_CONFIG_DIR/chats/0123456789abcdef0123456789abcdef/$1/meta.json"
 }
 if command -v sqlite3 >/dev/null 2>&1; then
   cursor_chat "$CID" '{"agentId":"x","name":"Evaluate Smart Placement","mode":"default"}'
@@ -179,6 +183,17 @@ if command -v sqlite3 >/dev/null 2>&1; then
   check "an unknown chat is not there" "-" \
     "$(topic_of 00000000-0000-0000-0000-000000000000 "$DIR" cursor)"
   check "a cursor id that is not a uuid is refused" "-" "$(topic_of "../$CID" "$DIR" cursor)"
+  cursor_chat "$CID" '{"name":"From the store"}'
+  cursor_meta "$CID" '{"schemaVersion":1,"title":"From meta"}'
+  check "meta.json's title wins over the store" "From meta" "$(topic_of "$CID" "$DIR" cursor)"
+  cursor_meta "$CID" '{"schemaVersion":1,"hasConversation":true}'
+  check "a meta.json with no title falls back to the store" "From the store" \
+    "$(topic_of "$CID" "$DIR" cursor)"
+  cursor_chat "$CID" '{"name":"After the agent exits"}'
+  sqlite3 "$CURSOR_CONFIG_DIR/chats/0123456789abcdef0123456789abcdef/$CID/store.db" \
+    "PRAGMA journal_mode=WAL" >/dev/null
+  check "a closed WAL store is still read" "After the agent exits" \
+    "$(topic_of "$CID" "$DIR" cursor)"
   cursor_chat "$CID" '{"name":"Belongs to cursor"}'
   check "a claude pane does not read a cursor chat" "-" "$(topic_of "$CID" "$DIR")"
   check "AGENT_TRANSCRIPT=0 reads no cursor chat" "-" \

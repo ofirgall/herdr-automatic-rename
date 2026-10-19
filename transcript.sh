@@ -177,29 +177,42 @@ _AR_CURSOR_UNNAMED='New Agent'
 # herdr's cursor integration reports the chat id as the pane's session. Cursor
 # files the chat under md5(workspace root), and the root is not always the pane's
 # directory, so the chat is found by its id across every workspace: there is one
-# match, and a glob costs less than hashing a guess. The name lives in the chat's
-# store.db as hex-encoded JSON in the meta table. The read is read-only but not
-# immutable: the running agent writes through a WAL, and the name it just
-# generated may still be there.
+# match, and a glob costs less than hashing a guess.
 ar_cursor_topic() {
-  local match db="" row=""
+  local match dir="" row=""
   [[ $1 =~ $_AR_SESSION_ID ]] || return 1
-  command -v sqlite3 >/dev/null 2>&1 || return 1
-  for match in "$(ar_cursor_chats_root)"/*/"$1"/store.db; do
-    if [ -f "$match" ]; then
-      db=$match
+  for match in "$(ar_cursor_chats_root)"/*/"$1"; do
+    if [ -d "$match" ]; then
+      dir=$match
       break
     fi
   done
-  [ -n "$db" ] || return 1
-  row=$(sqlite3 -readonly "$db" \
-      "SELECT CAST(unhex(value) AS TEXT) FROM meta LIMIT 1" 2>/dev/null \
+  [ -n "$dir" ] || return 1
+  row=$(_ar_cursor_chat_meta "$dir" \
     | jq -Rrn --arg unnamed "$_AR_CURSOR_UNNAMED" "$AR_JQ_CLEAN$AR_JQ_TASK"'
-      first(inputs | fromjson? // empty | .name | strings
+      first(inputs | fromjson? // empty | (.title, .name) | strings
         | select(length > 0 and . != $unnamed))
       // empty | task("") | select(length > 0)
       | [ ., ascii_downcase ] | join([31] | implode)' 2>/dev/null)
   [ -n "$row" ] || return 1
   IFS=$AR_ROW_SEP read -r AR_TRANSCRIPT_TOPIC AR_TRANSCRIPT_TOPIC_LC <<< "$row"
   [ -n "$AR_TRANSCRIPT_TOPIC" ]
+}
+
+# _ar_cursor_chat_meta <chat dir> -> the chat's metadata as JSON lines, newest
+# format first. Recent Cursor writes meta.json with a `title`. Every version
+# keeps hex-encoded JSON with a `name` in store.db's meta table. That read is
+# read-only so a running agent's WAL, which may hold the name it just generated,
+# is seen. Read-only cannot open a WAL database whose -shm file is gone, as it
+# is once the agent exits, so that case falls back to an immutable read.
+_ar_cursor_chat_meta() {
+  local db="$1/store.db" q="SELECT CAST(unhex(value) AS TEXT) FROM meta LIMIT 1"
+  if [ -f "$1/meta.json" ]; then
+    tr -d '\n' < "$1/meta.json"
+    echo
+  fi
+  [ -f "$db" ] && command -v sqlite3 >/dev/null 2>&1 || return 0
+  sqlite3 -readonly "$db" "$q" 2>/dev/null \
+    || sqlite3 "file:$db?immutable=1" "$q" 2>/dev/null
+  return 0
 }
