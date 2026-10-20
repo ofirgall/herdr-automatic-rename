@@ -285,29 +285,49 @@ ar_strip_prefix() {
   fi
 }
 
-# ar_index_prefix <label> -> the number prefix the label carries, respelled in the
-# current INDEX_FORMAT, or "" when absent. Used by the fast path to carry an
-# existing number forward without recomputing position. Answers only when
-# ar_strip_prefix would strip, so the two never disagree about a label.
+# ar_index_prefix <label> [kind] -> the number prefix the label carries,
+# respelled in that kind's format, or "" when absent. Used by the fast path to
+# carry an existing number forward without recomputing position. Answers only
+# when ar_strip_prefix would strip, so the two never disagree about a label.
 ar_index_prefix() {
   ar_index_parse "$1" || return 0
-  ar_index_mark "$AR_INDEX_N"
+  ar_index_mark "$AR_INDEX_N" "${2:-}"
   printf '%s' "$AR_INDEX_MARK"
 }
 
-# ar_index_mark <n> -> AR_INDEX_MARK, the number prefix for position <n>.
-# INDEX_FORMAT is a printf format whose one %s is the number, "[%s] " unless set.
-# INDEX_DIGITS, when set, spells the number: its first entry is 1, its second
-# 2, and a number past its end is written in digits. Published through a global
-# rather than printed, because ar_index_parse asks for nine of these per label and
-# a command substitution is a fork each.
+# ar_index_format [workspaces|tabs|agents] -> AR_INDEX_FMT, the printf format
+# that kind is numbered with: its own INDEX_FORMAT_<KIND>, else INDEX_FORMAT,
+# else "[%s] " -- the same fallback chain as ar_index_on. No kind means the
+# shared INDEX_FORMAT.
+ar_index_format() {
+  case "${1:-}" in
+    workspaces) AR_INDEX_FMT=${INDEX_FORMAT_WORKSPACES:-${INDEX_FORMAT:-[%s] }} ;;
+    tabs)       AR_INDEX_FMT=${INDEX_FORMAT_TABS:-${INDEX_FORMAT:-[%s] }} ;;
+    agents)     AR_INDEX_FMT=${INDEX_FORMAT_AGENTS:-${INDEX_FORMAT:-[%s] }} ;;
+    *)          AR_INDEX_FMT=${INDEX_FORMAT:-[%s] } ;;
+  esac
+}
+
+# ar_index_mark <n> [kind] -> AR_INDEX_MARK, the number prefix for position <n>
+# in that kind's format (ar_index_format).
 ar_index_mark() {
+  ar_index_format "${2:-}"
+  ar_index_spell "$1" "$AR_INDEX_FMT"
+}
+
+# ar_index_spell <n> <format> -> AR_INDEX_MARK. The format is a printf format
+# whose one %s is the number. INDEX_DIGITS, when set, spells the number: its
+# first entry is 1, its second 2, and a number past its end is written in
+# digits. Published through a global rather than printed, because
+# ar_index_parse asks for nine of these per format and a command substitution
+# is a fork each.
+ar_index_spell() {
   local shown=$1
   if [ "$1" -ge 1 ] 2>/dev/null && [ "$1" -le "${#INDEX_DIGITS[@]}" ]; then
     shown=${INDEX_DIGITS[$(($1 - 1))]}
   fi
   # shellcheck disable=SC2059 # the format is the user's INDEX_FORMAT setting
-  printf -v AR_INDEX_MARK "${INDEX_FORMAT:-[%s] }" "$shown"
+  printf -v AR_INDEX_MARK "$2" "$shown"
 }
 
 # ar_index_bare <mark> -> AR_INDEX_BARE, the mark without its trailing
@@ -320,19 +340,28 @@ ar_index_bare() {
 # ar_index_parse <label> -> 0 when the label starts with a number prefix, setting
 # AR_INDEX_N (the number) and AR_INDEX_REST (the label after it).
 #
-# The current INDEX_FORMAT is tried for 1..9, the numbers ar_desired writes. The
-# default "[N] " spelling is always accepted too, with any count of digits: that
-# is what every label carried before INDEX_FORMAT existed, so a changed format
-# still recognizes the old prefixes and respells them instead of reading them as
-# names typed by hand. A prefix must match exactly ("[1]x] foo" is not one), and
-# "[wip] foo" is never one, so hand-typed brackets are left alone.
+# Every kind's current format (ar_index_format) is tried for 1..9, the numbers
+# ar_desired writes: strip callers do not know which kind a label belongs to,
+# and a label that moved kinds (a tab title copied to a workspace) still reads
+# as numbered. The default "[N] " spelling is always accepted too, with any
+# count of digits: that is what every label carried before INDEX_FORMAT existed,
+# so a changed format still recognizes the old prefixes and respells them
+# instead of reading them as names typed by hand. A prefix must match exactly
+# ("[1]x] foo" is not one), and "[wip] foo" is never one, so hand-typed brackets
+# are left alone.
 ar_index_parse() {
-  local s=$1 n num
-  if [ "${INDEX_FORMAT:-[%s] }" != "[%s] " ] || [ "${#INDEX_DIGITS[@]}" -gt 0 ]; then
+  local s=$1 n num kind fmt seen=""
+  for kind in workspaces tabs agents; do
+    ar_index_format "$kind"
+    fmt=$AR_INDEX_FMT
+    # The default with plain digits is the legacy case below, any digit count.
+    [ "$fmt" = "[%s] " ] && [ "${#INDEX_DIGITS[@]}" -eq 0 ] && continue
+    case "$seen" in *"<$fmt>"*) continue ;; esac
+    seen="$seen<$fmt>"
     for n in 1 2 3 4 5 6 7 8 9; do
-      ar_index_mark "$n"
+      ar_index_spell "$n" "$fmt"
       ar_index_bare "$AR_INDEX_MARK"
-      [ -n "$AR_INDEX_BARE" ] || return 1     # a format with no visible mark
+      [ -n "$AR_INDEX_BARE" ] || break        # a format with no visible mark
       if [ "$s" = "$AR_INDEX_BARE" ]; then
         AR_INDEX_N=$n; AR_INDEX_REST=""; return 0
       fi
@@ -340,7 +369,7 @@ ar_index_parse() {
         "$AR_INDEX_MARK"*) AR_INDEX_N=$n; AR_INDEX_REST=${s#"$AR_INDEX_MARK"}; return 0 ;;
       esac
     done
-  fi
+  done
   case "$s" in
     \[[0-9]*\]\ *|\[[0-9]*\])
       num=${s#\[}; num=${num%%\]*}
@@ -501,7 +530,7 @@ ar_tab_strip_prefix() {
 # ar_desired <scope> <position> <base> -> the label this item should have.
 #   --clear              -> always the bare base (strip numbering)
 #   scope off            -> bare base (self-heals a stale prefix as items reconcile)
-#   scope on, 1..9       -> "[N] base", spelled by INDEX_FORMAT/INDEX_DIGITS
+#   scope on, 1..9       -> "[N] base", spelled by the scope's format/INDEX_DIGITS
 # Any other position -> bare base, because no keybind reaches the item: it sits
 # past the 9th slot, or (position 0) the sidebar does not render it at all, which
 # is how ar_workspace_positions reports a row hidden inside a collapsed space.
@@ -512,7 +541,7 @@ ar_desired() {
     # An empty base (a HIDE_SHELL tab) is numbered "[3]", not "[3] " -- herdr
     # would drop the trailing space anyway, and ar_strip_prefix reads the bare
     # form back as the empty base it came from.
-    ar_index_mark "$n"
+    ar_index_mark "$n" "$scope"
     if [ -n "$base" ]; then
       printf '%s%s' "$AR_INDEX_MARK" "$base"
     else
@@ -2770,7 +2799,7 @@ ar_fast_tab() {
       "$tag"*) core=${core#"$tag"}; [ "${HOST_PREFIX:-0}" = "1" ] && hosttag=$tag ;;
     esac
   fi
-  if ar_index_on tabs; then prefix=$(ar_index_prefix "$core"); else prefix=""; fi
+  if ar_index_on tabs; then prefix=$(ar_index_prefix "$core" tabs); else prefix=""; fi
   slabel=$(ar_tab_strip_prefix "$core" "$(ar_tag_strip_ok "$tab")")
   ar_name_eligible "$tab" "$slabel" || return 0   # it says why
   # The context is this shell's own $PWD -- the hook backgrounds the engine from

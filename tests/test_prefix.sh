@@ -49,6 +49,19 @@ check "prefix: malformed not read"  ""           "$(ar_index_prefix '[1]: [done]
 # A host tag whose spelling changed still comes off through a custom number.
 check "fmt: residue cut"            "api"        "$(_fmt '%s: ' : 'HOST_PREFIX_SEP="> "; ar_tab_strip_prefix "oldhost> 2: api" 1')"
 
+# Per-kind formats: each kind spells its own number, and every kind's spelling
+# strips, since strip callers do not know the kind.
+_kfmt() ( INDEX_FORMAT=; INDEX_FORMAT_WORKSPACES='%s │ '; INDEX_FORMAT_TABS=; INDEX_FORMAT_AGENTS='%s: '; INDEX_DIGITS=(); eval "$1" )
+check "kind: workspace own style"   "7 │ herdr"  "$(_kfmt 'CLEAR=0; ar_desired workspaces 7 herdr')"
+check "kind: tab falls to default"  "[2] api"    "$(_kfmt 'CLEAR=0; ar_desired tabs 2 api')"
+check "kind: agent own style"       "3: claude"  "$(_kfmt 'CLEAR=0; ar_desired agents 3 claude')"
+check "kind: workspace bare mark"   "7 │"        "$(_kfmt 'CLEAR=0; ar_desired workspaces 7 ""')"
+check "kind: strip workspace style" "herdr"      "$(_kfmt 'ar_strip_prefix "7 │ herdr"')"
+check "kind: strip agent style"     "claude"     "$(_kfmt 'ar_strip_prefix "3: claude"')"
+check "kind: strip default style"   "api"        "$(_kfmt 'ar_strip_prefix "[2] api"')"
+check "kind: prefix respelled"      "[2] "       "$(_kfmt 'ar_index_prefix "2: api" tabs')"
+check "kind: falls to INDEX_FORMAT" "2 │ api"    "$( INDEX_FORMAT='%s │ '; INDEX_FORMAT_TABS=; INDEX_DIGITS=(); CLEAR=0; ar_desired tabs 2 api )"
+
 # ---- ar_is_placeholder: empty or all-digits ----
 ar_is_placeholder "";     check_rc "empty is placeholder"    0 $?
 ar_is_placeholder "3";    check_rc "integer is placeholder"  0 $?

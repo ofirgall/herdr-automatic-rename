@@ -39,6 +39,13 @@
 # "[N] " one, are recognized and respelled at the next herdr event.
 # INDEX_FORMAT='[%s] '
 
+# Per-kind formats, each falling back to INDEX_FORMAT when unset, so workspaces
+# and tabs can be told apart at a glance: "7 │ herdr" in the sidebar beside
+# "[2] api › nvim" in the tab bar.
+# INDEX_FORMAT_WORKSPACES='%s │ '
+# INDEX_FORMAT_TABS='[%s] '
+# INDEX_FORMAT_AGENTS='[%s] '
+
 # Symbols for the numbers 1-9, used in place of digits inside INDEX_FORMAT. A
 # number with no entry is written in digits. Empty (the default) uses digits.
 # INDEX_DIGITS=(① ② ③ ④ ⑤ ⑥ ⑦ ⑧ ⑨)
