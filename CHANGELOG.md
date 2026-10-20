@@ -6,7 +6,7 @@ All notable changes to herdr-automatic-rename are documented here. The format fo
 
 ### Added
 
-- `INDEX_FORMAT` sets how the jump-key number is written, such as `2: api` with `INDEX_FORMAT='%s: '`. `INDEX_FORMAT_WORKSPACES`, `INDEX_FORMAT_TABS` and `INDEX_FORMAT_AGENTS` give each kind its own style, and `INDEX_DIGITS` swaps the digits for symbols such as `①`. Labels numbered in an earlier style are recognized and respelled.
+- `INDEX_FORMAT` sets how the jump-key number is written, such as `2: api` with `INDEX_FORMAT='%s: '`. `INDEX_FORMAT_WORKSPACES`, `INDEX_FORMAT_TABS` and `INDEX_FORMAT_AGENTS` give each kind its own style, and `INDEX_DIGITS` swaps the digits for symbols such as `①`. Labels numbered in any style the plugin wrote before are recognized and respelled, so changing the style never stacks two numbers.
 
 ## [0.13.1] - 2026-10-17
 

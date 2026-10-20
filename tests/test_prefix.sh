@@ -62,6 +62,24 @@ check "kind: strip default style"   "api"        "$(_kfmt 'ar_strip_prefix "[2] 
 check "kind: prefix respelled"      "[2] "       "$(_kfmt 'ar_index_prefix "2: api" tabs')"
 check "kind: falls to INDEX_FORMAT" "2 │ api"    "$( INDEX_FORMAT='%s │ '; INDEX_FORMAT_TABS=; INDEX_DIGITS=(); CLEAR=0; ar_desired tabs 2 api )"
 
+# ---- the marks record: prefixes written under an earlier INDEX_FORMAT ----
+# Each case gets its own record file, so one cannot see another's marks.
+_marks() (
+  MARKS_FILE=$(mktemp); trap 'rm -f "$MARKS_FILE"' EXIT
+  unset AUTO_INDEX AUTO_INDEX_WORKSPACES AUTO_INDEX_TABS AUTO_INDEX_AGENTS
+  INDEX_FORMAT_WORKSPACES=; INDEX_FORMAT_TABS=; INDEX_FORMAT_AGENTS=; INDEX_DIGITS=()
+  eval "$1"
+)
+check "marks: old format stripped"  "zsh"        "$(_marks 'INDEX_FORMAT="%s > "; ar_marks_remember; INDEX_FORMAT="%s │ "; ar_marks_remember; ar_strip_prefix "1 > zsh"')"
+check "marks: old one respelled"    "3 │ "       "$(_marks 'INDEX_FORMAT="%s > "; ar_marks_remember; INDEX_FORMAT="%s │ "; ar_marks_remember; ar_index_prefix "3 > zsh" tabs')"
+check "marks: old bare mark"        ""           "$(_marks 'INDEX_FORMAT="%s > "; ar_marks_remember; INDEX_FORMAT="%s │ "; ar_marks_remember; ar_strip_prefix "2 >"')"
+check "marks: old digits stripped"  "api"        "$(_marks 'INDEX_FORMAT="%s "; INDEX_DIGITS=(①); ar_marks_remember; INDEX_DIGITS=(); ar_marks_remember; ar_strip_prefix "① api"')"
+check "marks: survive a reload"     "zsh"        "$(_marks 'INDEX_FORMAT="%s > "; ar_marks_remember; INDEX_FORMAT="%s │ "; AR_MARK_N=(); AR_MARK_S=(); ar_marks_load; ar_strip_prefix "1 > zsh"')"
+check "marks: unwritten not ours"   "1 > zsh"    "$(_marks 'INDEX_FORMAT="%s │ "; ar_marks_remember; ar_strip_prefix "1 > zsh"')"
+check "marks: no growth unchanged"  "9"          "$(_marks 'INDEX_FORMAT="%s │ "; ar_marks_remember; ar_marks_remember; wc -l < "$MARKS_FILE" | tr -d " "')"
+check "marks: default not recorded" "0"          "$(_marks 'INDEX_FORMAT=; ar_marks_remember; wc -l < "$MARKS_FILE" | tr -d " "')"
+check "marks: off kind not recorded" "0"         "$(_marks 'AUTO_INDEX=0; INDEX_FORMAT="%s │ "; ar_marks_remember; wc -l < "$MARKS_FILE" | tr -d " "')"
+
 # ---- ar_is_placeholder: empty or all-digits ----
 ar_is_placeholder "";     check_rc "empty is placeholder"    0 $?
 ar_is_placeholder "3";    check_rc "integer is placeholder"  0 $?

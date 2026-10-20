@@ -107,6 +107,7 @@ esac
 unset _ar_sock_dir _ar_sock_parent _ar_session _ar_root
 STATE_FILE="$STATE_DIR/state.json"
 LOCK_DIR="$STATE_DIR/lock"
+MARKS_FILE="$STATE_DIR/marks"
 RERUN_FLAG="$STATE_DIR/rerun"
 CONFIG_FILE="${HERDR_AUTOMATIC_RENAME_CONFIG:-${XDG_CONFIG_HOME:-$HOME/.config}/herdr-automatic-rename/config.sh}"
 
@@ -348,9 +349,12 @@ ar_index_bare() {
 # so a changed format still recognizes the old prefixes and respells them
 # instead of reading them as names typed by hand. A prefix must match exactly
 # ("[1]x] foo" is not one), and "[wip] foo" is never one, so hand-typed brackets
-# are left alone.
+# are left alone. After the current formats come the marks this plugin wrote
+# under earlier ones (ar_marks_remember), so a label numbered before an
+# INDEX_FORMAT or INDEX_DIGITS change is still read as numbered and respelled,
+# not taken for a hand-typed name and numbered a second time.
 ar_index_parse() {
-  local s=$1 n num kind fmt seen=""
+  local s=$1 n num kind fmt i seen=""
   for kind in workspaces tabs agents; do
     ar_index_format "$kind"
     fmt=$AR_INDEX_FMT
@@ -370,6 +374,15 @@ ar_index_parse() {
       esac
     done
   done
+  for i in "${!AR_MARK_S[@]}"; do
+    ar_index_bare "${AR_MARK_S[$i]}"
+    if [ "$s" = "$AR_INDEX_BARE" ]; then
+      AR_INDEX_N=${AR_MARK_N[$i]}; AR_INDEX_REST=""; return 0
+    fi
+    case "$s" in
+      "${AR_MARK_S[$i]}"*) AR_INDEX_N=${AR_MARK_N[$i]}; AR_INDEX_REST=${s#"${AR_MARK_S[$i]}"}; return 0 ;;
+    esac
+  done
   case "$s" in
     \[[0-9]*\]\ *|\[[0-9]*\])
       num=${s#\[}; num=${num%%\]*}
@@ -383,6 +396,54 @@ ar_index_parse() {
       ;;
   esac
   return 1
+}
+
+# ar_marks_load -> AR_MARK_N / AR_MARK_S, the number and spelling of every mark
+# recorded in MARKS_FILE, one "<n><TAB><mark>" line each. Two parallel arrays
+# rather than one of joined strings, so ar_index_parse compares without
+# splitting anything per label.
+ar_marks_load() {
+  AR_MARK_N=(); AR_MARK_S=()
+  [ -f "$MARKS_FILE" ] || return 0
+  local n m
+  while IFS=$'\t' read -r n m; do
+    case "$n" in ''|*[!0-9]*) continue ;; esac
+    [ -n "$m" ] || continue
+    AR_MARK_N+=("$n"); AR_MARK_S+=("$m")
+  done < "$MARKS_FILE"
+}
+
+# ar_marks_remember -> records, in MARKS_FILE, each mark the current config
+# writes for 1..9 in every numbered kind, and loads the full record for
+# ar_index_parse. The record only grows when the config spells a mark it has
+# never spelled before, so a run with an unchanged config appends nothing. A
+# lost race appends a line twice, which ar_index_parse does not mind. The
+# default "[N] " needs no record: ar_index_parse always reads it.
+ar_marks_remember() {
+  local kind fmt n i known seen="" add=""
+  ar_marks_load
+  for kind in workspaces tabs agents; do
+    ar_index_on "$kind" || continue
+    ar_index_format "$kind"
+    fmt=$AR_INDEX_FMT
+    [ "$fmt" = "[%s] " ] && [ "${#INDEX_DIGITS[@]}" -eq 0 ] && continue
+    case "$seen" in *"<$fmt>"*) continue ;; esac
+    seen="$seen<$fmt>"
+    for n in 1 2 3 4 5 6 7 8 9; do
+      ar_index_spell "$n" "$fmt"
+      ar_index_bare "$AR_INDEX_MARK"
+      [ -n "$AR_INDEX_BARE" ] || break
+      case "$AR_INDEX_MARK" in *$'\t'*|*$'\n'*) break ;; esac
+      known=0
+      for i in "${!AR_MARK_S[@]}"; do
+        [ "${AR_MARK_N[$i]}" = "$n" ] && [ "${AR_MARK_S[$i]}" = "$AR_INDEX_MARK" ] && { known=1; break; }
+      done
+      [ "$known" = "1" ] && continue
+      AR_MARK_N+=("$n"); AR_MARK_S+=("$AR_INDEX_MARK")
+      add="$add$n"$'\t'"$AR_INDEX_MARK"$'\n'
+    done
+  done
+  [ -z "$add" ] || printf '%s' "$add" >> "$MARKS_FILE" 2>/dev/null || true
 }
 
 # ar_host_tag -> "HPmini: " -- this machine's short hostname joined to
@@ -3029,6 +3090,10 @@ ar_main() {
   # overrides and their shared default are read straight from the config by
   # ar_index_on and ar_index_explicit.
   : "${NAME_TABS:=1}"
+
+  # Before any label is read: every mark the config now writes joins the record
+  # of marks this plugin wrote, so a changed format still recognizes the old ones.
+  ar_marks_remember
 
   MODE="${1:-event}"
   CLEAR=0

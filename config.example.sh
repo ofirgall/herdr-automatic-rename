@@ -35,8 +35,9 @@
 # default is "[%s] " ("[2] api"); "%s: " gives "2: api" and "%s " gives "2 api".
 # A format spelled like the start of a real name ("%s ") makes a hand-typed name
 # such as "2 bugs" read as numbered, so prefer one with a mark of its own.
-# Changing it is safe mid-session: labels in the old style, and the default
-# "[N] " one, are recognized and respelled at the next herdr event.
+# Changing it is safe mid-session: labels in any style the plugin wrote before
+# (it keeps a record in its state dir), and the default "[N] " one, are
+# recognized and respelled at the next herdr event.
 # INDEX_FORMAT='[%s] '
 
 # Per-kind formats, each falling back to INDEX_FORMAT when unset, so workspaces
