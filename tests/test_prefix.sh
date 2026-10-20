@@ -26,6 +26,29 @@ check "index prefix absent"         ""           "$(ar_index_prefix 'nvim')"
 check "index prefix non-numeric"    ""           "$(ar_index_prefix '[wip] x')"
 check "index prefix number-only"    "[3] "       "$(ar_index_prefix '[3]')"
 
+# ---- INDEX_FORMAT / INDEX_DIGITS: a configured spelling of the number ----
+# Each case runs in a subshell so the knobs cannot leak into later checks.
+_fmt() ( INDEX_FORMAT=$1; INDEX_DIGITS=(); eval "$2"; eval "$3" )
+check "fmt: desired spelled"        "2: api"     "$(_fmt '%s: ' : 'CLEAR=0; ar_desired tabs 2 api')"
+check "fmt: desired empty base"     "2:"         "$(_fmt '%s: ' : 'CLEAR=0; ar_desired tabs 2 ""')"
+check "fmt: strip own spelling"     "api"        "$(_fmt '%s: ' : 'ar_strip_prefix "2: api"')"
+check "fmt: strip bare mark"        ""           "$(_fmt '%s: ' : 'ar_strip_prefix "2:"')"
+check "fmt: strip legacy [N]"       "api"        "$(_fmt '%s: ' : 'ar_strip_prefix "[2] api"')"
+check "fmt: respell legacy prefix"  "2: "        "$(_fmt '%s: ' : 'ar_index_prefix "[2] api"')"
+check "fmt: past 9 not ours"        "10: api"    "$(_fmt '%s: ' : 'ar_strip_prefix "10: api"')"
+check "fmt: hand brackets kept"     "[wip] foo"  "$(_fmt '%s: ' : 'ar_strip_prefix "[wip] foo"')"
+check "fmt: no prefix untouched"    "plain"      "$(_fmt '%s: ' : 'ar_strip_prefix plain')"
+check "digits: desired glyph"       "② api"      "$(_fmt '%s ' 'INDEX_DIGITS=(① ② ③)' 'CLEAR=0; ar_desired tabs 2 api')"
+check "digits: past list is digits" "5 api"      "$(_fmt '%s ' 'INDEX_DIGITS=(① ② ③)' 'CLEAR=0; ar_desired tabs 5 api')"
+check "digits: strip glyph"         "api"        "$(_fmt '%s ' 'INDEX_DIGITS=(① ② ③)' 'ar_strip_prefix "② api"')"
+check "digits: prefix carried"      "② "         "$(_fmt '%s ' 'INDEX_DIGITS=(① ② ③)' 'ar_index_prefix "② api"')"
+check "digits: default brackets"    "[③] api"    "$(_fmt '' 'INDEX_DIGITS=(① ② ③)' 'CLEAR=0; ar_desired tabs 3 api')"
+# The prefix is reported only where the strip agrees, so the fast path can never
+# join a carried number to a base the strip refused.
+check "prefix: malformed not read"  ""           "$(ar_index_prefix '[1]: [done] task')"
+# A host tag whose spelling changed still comes off through a custom number.
+check "fmt: residue cut"            "api"        "$(_fmt '%s: ' : 'HOST_PREFIX_SEP="> "; ar_tab_strip_prefix "oldhost> 2: api" 1')"
+
 # ---- ar_is_placeholder: empty or all-digits ----
 ar_is_placeholder "";     check_rc "empty is placeholder"    0 $?
 ar_is_placeholder "3";    check_rc "integer is placeholder"  0 $?

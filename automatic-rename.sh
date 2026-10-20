@@ -280,36 +280,80 @@ ar_ws_derives() {
 # a row alone; the agent revert path does not, and would rename it to "". Only a
 # tab is ever numbered with an empty base, so reaching that needs a hand-typed "[3]".
 ar_strip_prefix() {
-  local s=$1 num
-  case "$s" in
-    \[[0-9]*\]\ *|\[[0-9]*\])
-      num=${s#\[}; num=${num%%\]*}
-      case "$num" in
-        ''|*[!0-9]*)   printf '%s' "$s" ;;
-        *)
-          if [ "$s" = "[$num]" ]; then printf ''
-          else printf '%s' "${s#"[$num] "}"
-          fi ;;
-      esac
-      ;;
-    *) printf '%s' "$s" ;;
-  esac
+  if ar_index_parse "$1"; then printf '%s' "$AR_INDEX_REST"
+  else printf '%s' "$1"
+  fi
 }
 
-# ar_index_prefix <label> -> the leading "[<digits>] " or "" when absent. Used by
-# the fast path to carry an existing number forward without recomputing position.
+# ar_index_prefix <label> -> the number prefix the label carries, respelled in the
+# current INDEX_FORMAT, or "" when absent. Used by the fast path to carry an
+# existing number forward without recomputing position. Answers only when
+# ar_strip_prefix would strip, so the two never disagree about a label.
 ar_index_prefix() {
-  local s=$1 num
+  ar_index_parse "$1" || return 0
+  ar_index_mark "$AR_INDEX_N"
+  printf '%s' "$AR_INDEX_MARK"
+}
+
+# ar_index_mark <n> -> AR_INDEX_MARK, the number prefix for position <n>.
+# INDEX_FORMAT is a printf format whose one %s is the number, "[%s] " unless set.
+# INDEX_DIGITS, when set, spells the number: its first entry is 1, its second
+# 2, and a number past its end is written in digits. Published through a global
+# rather than printed, because ar_index_parse asks for nine of these per label and
+# a command substitution is a fork each.
+ar_index_mark() {
+  local shown=$1
+  if [ "$1" -ge 1 ] 2>/dev/null && [ "$1" -le "${#INDEX_DIGITS[@]}" ]; then
+    shown=${INDEX_DIGITS[$(($1 - 1))]}
+  fi
+  # shellcheck disable=SC2059 # the format is the user's INDEX_FORMAT setting
+  printf -v AR_INDEX_MARK "${INDEX_FORMAT:-[%s] }" "$shown"
+}
+
+# ar_index_bare <mark> -> AR_INDEX_BARE, the mark without its trailing
+# whitespace: what an empty base (a HIDE_SHELL tab) is numbered with, since herdr
+# drops a label's trailing space anyway.
+ar_index_bare() {
+  AR_INDEX_BARE=${1%"${1##*[![:space:]]}"}
+}
+
+# ar_index_parse <label> -> 0 when the label starts with a number prefix, setting
+# AR_INDEX_N (the number) and AR_INDEX_REST (the label after it).
+#
+# The current INDEX_FORMAT is tried for 1..9, the numbers ar_desired writes. The
+# default "[N] " spelling is always accepted too, with any count of digits: that
+# is what every label carried before INDEX_FORMAT existed, so a changed format
+# still recognizes the old prefixes and respells them instead of reading them as
+# names typed by hand. A prefix must match exactly ("[1]x] foo" is not one), and
+# "[wip] foo" is never one, so hand-typed brackets are left alone.
+ar_index_parse() {
+  local s=$1 n num
+  if [ "${INDEX_FORMAT:-[%s] }" != "[%s] " ] || [ "${#INDEX_DIGITS[@]}" -gt 0 ]; then
+    for n in 1 2 3 4 5 6 7 8 9; do
+      ar_index_mark "$n"
+      ar_index_bare "$AR_INDEX_MARK"
+      [ -n "$AR_INDEX_BARE" ] || return 1     # a format with no visible mark
+      if [ "$s" = "$AR_INDEX_BARE" ]; then
+        AR_INDEX_N=$n; AR_INDEX_REST=""; return 0
+      fi
+      case "$s" in
+        "$AR_INDEX_MARK"*) AR_INDEX_N=$n; AR_INDEX_REST=${s#"$AR_INDEX_MARK"}; return 0 ;;
+      esac
+    done
+  fi
   case "$s" in
     \[[0-9]*\]\ *|\[[0-9]*\])
       num=${s#\[}; num=${num%%\]*}
-      case "$num" in
-        ''|*[!0-9]*) printf '' ;;
-        *)           printf '[%s] ' "$num" ;;
+      case "$num" in ''|*[!0-9]*) return 1 ;; esac
+      if [ "$s" = "[$num]" ]; then
+        AR_INDEX_N=$num; AR_INDEX_REST=""; return 0
+      fi
+      case "$s" in
+        "[$num] "*) AR_INDEX_N=$num; AR_INDEX_REST=${s#"[$num] "}; return 0 ;;
       esac
       ;;
-    *) printf '' ;;
   esac
+  return 1
 }
 
 # ar_host_tag -> "HPmini: " -- this machine's short hostname joined to
@@ -443,7 +487,11 @@ ar_tab_strip_prefix() {
     s=$(ar_strip_prefix "$s")
     if [ "$s" = "$prev" ] && [ "$2" = "1" ]; then
       case "$s" in
-        *"$sep"\[[0-9]*\]\ *) s=${s#*"$sep"\[[0-9]*\] } ;;
+        *"$sep"*)
+          if ar_index_parse "${s#*"$sep"}" && [ -n "$AR_INDEX_REST" ]; then
+            s=$AR_INDEX_REST
+          fi
+          ;;
       esac
     fi
   done
@@ -453,7 +501,7 @@ ar_tab_strip_prefix() {
 # ar_desired <scope> <position> <base> -> the label this item should have.
 #   --clear              -> always the bare base (strip numbering)
 #   scope off            -> bare base (self-heals a stale prefix as items reconcile)
-#   scope on, 1..9       -> "[N] base"
+#   scope on, 1..9       -> "[N] base", spelled by INDEX_FORMAT/INDEX_DIGITS
 # Any other position -> bare base, because no keybind reaches the item: it sits
 # past the 9th slot, or (position 0) the sidebar does not render it at all, which
 # is how ar_workspace_positions reports a row hidden inside a collapsed space.
@@ -464,7 +512,13 @@ ar_desired() {
     # An empty base (a HIDE_SHELL tab) is numbered "[3]", not "[3] " -- herdr
     # would drop the trailing space anyway, and ar_strip_prefix reads the bare
     # form back as the empty base it came from.
-    printf '[%d]%s' "$n" "${base:+ $base}"
+    ar_index_mark "$n"
+    if [ -n "$base" ]; then
+      printf '%s%s' "$AR_INDEX_MARK" "$base"
+    else
+      ar_index_bare "$AR_INDEX_MARK"
+      printf '%s' "$AR_INDEX_BARE"
+    fi
   else
     printf '%s' "$base"
   fi
@@ -1358,6 +1412,10 @@ ar_tab_name() {
         # once rather than derived twice.
         reserve="$reserve$(ar_title_name_prefix "$AR_PANE_AGENT" "${MAX_TITLE_LEN:-28}")"
         condensed=$(ar_condense_title "$title" "$reserve")
+        # ar_condense_title refuses the default "[N] " shape itself; a custom
+        # INDEX_FORMAT is only known here. A label shaped like a number prefix is
+        # read back as a hand-typed name, and the tab opts out of naming.
+        if [ -n "$condensed" ] && ar_index_parse "$condensed"; then condensed=""; fi
         [ -n "$condensed" ] && title=$condensed
       fi
       ar_branch_of "$AR_PANE_DIR" >/dev/null
@@ -2732,7 +2790,7 @@ ar_fast_tab() {
   # number alone when there is one); anywhere else it means we have no name.
   if [ -z "$name" ]; then
     [ "${HIDE_SHELL:-0}" = "1" ] || { ar_trace "$tab no name computed for [$prog]"; return 0; }
-    prefix="${prefix% }"                        # "[3] " -> "[3]", "" stays ""
+    ar_index_bare "$prefix"; prefix=$AR_INDEX_BARE  # "[3] " -> "[3]", "" stays ""
   fi
   want="${hosttag}${prefix}${name}"
   if [ "$want" != "$label" ]; then

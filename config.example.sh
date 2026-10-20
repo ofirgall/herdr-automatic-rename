@@ -31,6 +31,18 @@
 # workspace or agent prefixes. Tabs lose theirs anyway when NAME_TABS=1, since
 # naming rewrites them.
 
+# How the number is written. A printf format whose one %s is the number. The
+# default is "[%s] " ("[2] api"); "%s: " gives "2: api" and "%s " gives "2 api".
+# A format spelled like the start of a real name ("%s ") makes a hand-typed name
+# such as "2 bugs" read as numbered, so prefer one with a mark of its own.
+# Changing it is safe mid-session: labels in the old style, and the default
+# "[N] " one, are recognized and respelled at the next herdr event.
+# INDEX_FORMAT='[%s] '
+
+# Symbols for the numbers 1-9, used in place of digits inside INDEX_FORMAT. A
+# number with no entry is written in digits. Empty (the default) uses digits.
+# INDEX_DIGITS=(① ② ③ ④ ⑤ ⑥ ⑦ ⑧ ⑨)
+
 # 1 puts this machine's hostname in front of the first tab of each workspace:
 # "HPmini: [1] api › nvim". The hostname is `uname -n` without the DNS domain,
 # then trimmed by HOST_PREFIX_STRIP. The plugin only ever removes a tag it added

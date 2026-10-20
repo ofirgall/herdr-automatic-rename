@@ -4,6 +4,10 @@ All notable changes to herdr-automatic-rename are documented here. The format fo
 
 ## [Unreleased]
 
+### Added
+
+- `INDEX_FORMAT` sets how the jump-key number is written, such as `2: api` with `INDEX_FORMAT='%s: '`. `INDEX_DIGITS` swaps the digits for symbols such as `①`. Labels numbered in an earlier style are recognized and respelled.
+
 ## [0.13.1] - 2026-10-17
 
 ### Fixed
