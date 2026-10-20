@@ -338,6 +338,26 @@ ar_index_bare() {
   AR_INDEX_BARE=${1%"${1##*[![:space:]]}"}
 }
 
+# ar_index_try <label> <n> <mark> -> 1 when the mark has no visible part (the
+# caller stops spelling that format), else 0. Updates ar_index_parse's best
+# match (AR_INDEX_N / AR_INDEX_REST, length in its local `best`) when the label
+# starts with the mark, or IS its bare form, and the mark is longer than any
+# match so far. A bare match takes the whole label, so nothing can beat it.
+ar_index_try() {
+  ar_index_bare "$3"
+  [ -n "$AR_INDEX_BARE" ] || return 1
+  if [ "$1" = "$AR_INDEX_BARE" ]; then
+    [ "${#1}" -gt "$best" ] && { best=${#1}; AR_INDEX_N=$2; AR_INDEX_REST=""; }
+    return 0
+  fi
+  case "$1" in
+    "$3"*)
+      [ "${#3}" -gt "$best" ] && { best=${#3}; AR_INDEX_N=$2; AR_INDEX_REST=${1#"$3"}; }
+      ;;
+  esac
+  return 0
+}
+
 # ar_index_parse <label> -> 0 when the label starts with a number prefix, setting
 # AR_INDEX_N (the number) and AR_INDEX_REST (the label after it).
 #
@@ -352,9 +372,11 @@ ar_index_bare() {
 # are left alone. After the current formats come the marks this plugin wrote
 # under earlier ones (ar_marks_remember), so a label numbered before an
 # INDEX_FORMAT or INDEX_DIGITS change is still read as numbered and respelled,
-# not taken for a hand-typed name and numbered a second time.
+# not taken for a hand-typed name and numbered a second time. Of the marks that
+# match, the longest wins: "1 " recorded under one format must not cut "1 |zsh"
+# written under another down to "|zsh", which would then be numbered again.
 ar_index_parse() {
-  local s=$1 n num kind fmt i seen=""
+  local s=$1 n num kind fmt i seen="" best=0
   for kind in workspaces tabs agents; do
     ar_index_format "$kind"
     fmt=$AR_INDEX_FMT
@@ -364,25 +386,13 @@ ar_index_parse() {
     seen="$seen<$fmt>"
     for n in 1 2 3 4 5 6 7 8 9; do
       ar_index_spell "$n" "$fmt"
-      ar_index_bare "$AR_INDEX_MARK"
-      [ -n "$AR_INDEX_BARE" ] || break        # a format with no visible mark
-      if [ "$s" = "$AR_INDEX_BARE" ]; then
-        AR_INDEX_N=$n; AR_INDEX_REST=""; return 0
-      fi
-      case "$s" in
-        "$AR_INDEX_MARK"*) AR_INDEX_N=$n; AR_INDEX_REST=${s#"$AR_INDEX_MARK"}; return 0 ;;
-      esac
+      ar_index_try "$s" "$n" "$AR_INDEX_MARK" || break   # a format with no visible mark
     done
   done
   for i in "${!AR_MARK_S[@]}"; do
-    ar_index_bare "${AR_MARK_S[$i]}"
-    if [ "$s" = "$AR_INDEX_BARE" ]; then
-      AR_INDEX_N=${AR_MARK_N[$i]}; AR_INDEX_REST=""; return 0
-    fi
-    case "$s" in
-      "${AR_MARK_S[$i]}"*) AR_INDEX_N=${AR_MARK_N[$i]}; AR_INDEX_REST=${s#"${AR_MARK_S[$i]}"}; return 0 ;;
-    esac
+    ar_index_try "$s" "${AR_MARK_N[$i]}" "${AR_MARK_S[$i]}"
   done
+  [ "$best" -gt 0 ] && return 0
   case "$s" in
     \[[0-9]*\]\ *|\[[0-9]*\])
       num=${s#\[}; num=${num%%\]*}
